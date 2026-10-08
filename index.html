@@ -38,7 +38,7 @@
   @keyframes twinkle { 50% { opacity: 1; transform: scale(1.6); } }
 
   /* butang gear */
-  .gear-btn {
+  .gear-btn, .fs-btn {
     position: fixed; top: 16px; right: 16px; z-index: 20;
     width: 48px; height: 48px; border-radius: 50%;
     border: 1px solid var(--border); background: var(--card); color: var(--text);
@@ -46,7 +46,12 @@
     backdrop-filter: blur(6px); transition: transform .4s, background .2s;
   }
   .gear-btn:hover { transform: rotate(90deg); background: rgba(255,255,255,.18); }
-  .gear-btn svg { width: 24px; height: 24px; }
+  .gear-btn svg, .fs-btn svg { width: 24px; height: 24px; }
+  .fs-btn { right: 76px; }
+  .fs-btn[hidden] { display: none; }
+  .fs-btn:hover { transform: scale(1.1); background: rgba(255,255,255,.18); }
+  .fs-btn .exit, .fs-btn.active .enter { display: none; }
+  .fs-btn.active .exit { display: block; }
 
   main {
     position: relative; z-index: 1; width: 100%; max-width: 1100px;
@@ -197,6 +202,14 @@
 <div class="stars" id="stars"></div>
 <canvas id="confetti"></canvas>
 
+<button class="fs-btn" id="fullscreenBtn" aria-label="Skrin penuh" title="Skrin penuh (F)">
+  <svg class="enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>
+  </svg>
+  <svg class="exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
+  </svg>
+</button>
 <button class="gear-btn" id="openSettings" aria-label="Tetapan">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3"/>
@@ -320,12 +333,29 @@
   $('plus').onclick = () => $('countInput').value = (+$('countInput').value || 0) + 1;
 
   $('saveBtn').onclick = () => {
-    names = parseNames($('namesInput').value);
+    // buang nama berulang & nama yang sudah menang (abaikan huruf besar/kecil dan ruang berlebihan)
+    const norm = s => s.replace(/\s+/g, ' ').toLowerCase();
+    const won = new Set(history.flatMap(h => h.names).map(norm));
+    const seen = new Set();
+    let dupes = 0, winnersRemoved = 0;
+    names = parseNames($('namesInput').value).filter(x => {
+      const k = norm(x);
+      if (won.has(k)) { winnersRemoved++; return false; }
+      if (seen.has(k)) { dupes++; return false; }
+      seen.add(k); return true;
+    });
+    $('namesInput').value = names.join('\n');
+    $('nameCount').textContent = names.length;
+
     drawCount = Math.max(1, parseInt($('countInput').value, 10) || 1);
     soundOn = $('soundInput').checked;
     save(KEY_NAMES, names); save(KEY_COUNT, drawCount); save(KEY_SOUND, soundOn);
     renderInfo(); closeSettings();
-    toast(`Disimpan: ${names.length} nama, ${drawCount} setiap cabutan`);
+    const notes = [];
+    if (dupes) notes.push(`${dupes} nama berulang`);
+    if (winnersRemoved) notes.push(`${winnersRemoved} nama sudah menang`);
+    toast(`Disimpan: ${names.length} nama, ${drawCount} setiap cabutan` +
+      (notes.length ? ` · dibuang: ${notes.join(', ')}` : ''));
   };
 
   $('clearHistoryBtn').onclick = () => {
@@ -423,9 +453,29 @@
     renderInfo(); renderHistory();
   }
 
+  /* ---------- Skrin penuh ---------- */
+  const fsBtn = $('fullscreenBtn');
+  const root = document.documentElement;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function toggleFullscreen() {
+    if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+  }
+  function syncFullscreen() {
+    const on = !!fsElement();
+    fsBtn.classList.toggle('active', on);
+    fsBtn.setAttribute('aria-label', on ? 'Keluar skrin penuh' : 'Skrin penuh');
+    fsBtn.title = on ? 'Keluar skrin penuh (F)' : 'Skrin penuh (F)';
+  }
+  if (!(root.requestFullscreen || root.webkitRequestFullscreen)) fsBtn.hidden = true;
+  fsBtn.onclick = toggleFullscreen;
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  document.addEventListener('webkitfullscreenchange', syncFullscreen);
+
   $('drawBtn').onclick = draw;
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && isOpen()) closeSettings();
+    if (e.key.toLowerCase() === 'f' && !isOpen() && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
     if ((e.code === 'Space' || e.key === 'Enter') && !isOpen() && document.activeElement.tagName !== 'BUTTON') {
       e.preventDefault(); draw();
     }
